@@ -9,7 +9,7 @@ providers:
     timeout_ms: 10000
 
 models:
-  - id: gpt-4o-mini
+  - id: qwen3.5-flash
     provider: openai
     task: generation
     enabled: true
@@ -17,40 +17,20 @@ models:
     max_context_tokens: 128000
     input_price_per_1k: 0.00015
     output_price_per_1k: 0.0006
-  - id: claude-3-5-haiku
-    provider: anthropic
-    task: generation
-    enabled: true
-    priority: 20
-    max_context_tokens: 200000
-    input_price_per_1k: 0.00025
-    output_price_per_1k: 0.00125
-  - id: text-embedding-3-large
-    provider: openai
-    task: embedding
-    enabled: true
-    priority: 10
-    input_price_per_1k: 0.00013
-    output_price_per_1k: 0.0
 
 routes:
   rag_qa:
     generation:
-      - gpt-4o-mini
-      - claude-3-5-haiku
+      - qwen3.5-flash
     embedding: []
   chat:
     generation:
-      - gpt-4o-mini
-      - claude-3-5-haiku
+      - qwen3.5-flash
     embedding: []
   agent:
     generation:
-      - gpt-4o-mini
-      - claude-3-5-haiku
+      - qwen3.5-flash
     embedding: []
   ingestion:
     generation: []
-    embedding:
-      - text-embedding-3-large
-
+    embedding: []
