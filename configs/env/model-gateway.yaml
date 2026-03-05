@@ -1,6 +1,7 @@
 providers:
   openai:
-    base_url: ${OPENAI_BASE_URL}
+    # base_url: ${OPENAI_BASE_URL}
+    base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1/responses"
     api_key: ${OPENAI_API_KEY}
     timeout_ms: 10000
   anthropic:
