@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -11,10 +12,11 @@ if str(MODULE_ROOT) not in sys.path:
     sys.path.insert(0, str(MODULE_ROOT))
 
 from model_gateway.adapters.base import AdapterResult
+from model_gateway.adapters.langchain_openai import LangChainOpenAIAdapter
 from model_gateway.adapters.mock import MockProviderAdapter
 from model_gateway.config import ConfigStore, GatewayConfig, ModelConfig, ProviderConfig, SceneRouteConfig
 from model_gateway.circuit_breaker import CircuitBreaker, CircuitBreakerSettings
-from model_gateway.errors import err_deadline
+from model_gateway.errors import GatewayError, err_deadline
 from model_gateway.gateway import ModelGateway
 from model_gateway.schemas import EmbeddingRequest, GenerationRequest, Message, RoutingOptions
 
@@ -132,6 +134,100 @@ class ModelGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("vectors", resp.data)
 
 
+class ModelGatewayConfigLoadingTests(unittest.TestCase):
+    def test_from_config_file_supports_custom_openai_compatible_provider(self) -> None:
+        config_text = """
+providers:
+  openai:
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1/responses
+    api_key: openai-key
+    timeout_ms: 10000
+  local_emb:
+    adapter: openai_compatible
+    base_url: http://127.0.0.1:8002/v1
+    api_key: dummy-local-key
+    timeout_ms: 10000
+
+models:
+  - id: qwen3.5-flash
+    provider: openai
+    task: generation
+    enabled: true
+  - id: bge-m3
+    provider: local_emb
+    task: embedding
+    enabled: true
+
+routes:
+  ingestion:
+    generation: []
+    embedding:
+      - bge-m3
+"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "gateway.yaml"
+            path.write_text(config_text, encoding="utf-8")
+            gateway = ModelGateway.from_config_file(path)
+
+        self.assertIn("local_emb", gateway.adapters)
+        self.assertIsInstance(gateway.adapters["local_emb"], LangChainOpenAIAdapter)
+
+    def test_from_config_file_keeps_legacy_openai_mapping(self) -> None:
+        config_text = """
+providers:
+  openai:
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1/responses
+    api_key: openai-key
+    timeout_ms: 10000
+
+models:
+  - id: qwen3.5-flash
+    provider: openai
+    task: generation
+    enabled: true
+
+routes:
+  rag_qa:
+    generation:
+      - qwen3.5-flash
+    embedding: []
+"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "gateway.yaml"
+            path.write_text(config_text, encoding="utf-8")
+            gateway = ModelGateway.from_config_file(path)
+
+        self.assertIn("openai", gateway.adapters)
+        self.assertIsInstance(gateway.adapters["openai"], LangChainOpenAIAdapter)
+
+    def test_from_config_file_requires_adapter_for_custom_provider(self) -> None:
+        config_text = """
+providers:
+  local_emb:
+    base_url: http://127.0.0.1:8002/v1
+    api_key: dummy-local-key
+    timeout_ms: 10000
+
+models:
+  - id: bge-m3
+    provider: local_emb
+    task: embedding
+    enabled: true
+
+routes:
+  ingestion:
+    generation: []
+    embedding:
+      - bge-m3
+"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "gateway.yaml"
+            path.write_text(config_text, encoding="utf-8")
+            with self.assertRaises(GatewayError) as exc:
+                ModelGateway.from_config_file(path)
+
+        self.assertIn("adapter is not configured", str(exc.exception))
+
+
 if __name__ == "__main__":
     unittest.main()
-

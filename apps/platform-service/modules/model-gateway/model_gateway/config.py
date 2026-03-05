@@ -13,9 +13,15 @@ from .errors import err_invalid_params
 
 
 ENV_PATTERN = re.compile(r"\$\{([A-Z0-9_]+)\}")
+ProviderAdapter = Literal["openai_compatible", "anthropic"]
+DEFAULT_PROVIDER_ADAPTERS: dict[str, ProviderAdapter] = {
+    "openai": "openai_compatible",
+    "anthropic": "anthropic",
+}
 
 
 class ProviderConfig(BaseModel):
+    adapter: ProviderAdapter | None = None
     base_url: str | None = None
     api_key: str | None = None
     timeout_ms: int = Field(default=10000, ge=500, le=120000)
@@ -103,10 +109,15 @@ def _resolve_env(value: object) -> object:
     return value
 
 
+def resolve_provider_adapter(provider_name: str, provider: ProviderConfig) -> ProviderAdapter | None:
+    if provider.adapter is not None:
+        return provider.adapter
+    return DEFAULT_PROVIDER_ADAPTERS.get(provider_name)
+
+
 def load_gateway_config(config_path: str | Path) -> ConfigStore:
     path = Path(config_path)
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     resolved = _resolve_env(raw)
     cfg = GatewayConfig.model_validate(resolved)
     return ConfigStore(cfg)
-

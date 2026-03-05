@@ -1,0 +1,4 @@
+vector_store:
+  qdrant_url: ""
+  qdrant_api_key: ""
+  qdrant_path: "index/qdrant_local"

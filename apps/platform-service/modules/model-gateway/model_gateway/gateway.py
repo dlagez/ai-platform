@@ -8,7 +8,7 @@ from typing import Literal
 
 from .adapters import BaseProviderAdapter, LangChainAnthropicAdapter, LangChainOpenAIAdapter
 from .adapters.base import AdapterResult
-from .config import ConfigStore, ModelConfig, ProviderConfig, load_gateway_config
+from .config import ConfigStore, ModelConfig, ProviderConfig, load_gateway_config, resolve_provider_adapter
 from .circuit_breaker import CircuitBreaker, CircuitBreakerSettings
 from .errors import (
     GatewayError,
@@ -31,6 +31,11 @@ from .schemas import (
 
 
 class ModelGateway:
+    ADAPTER_REGISTRY = {
+        "openai_compatible": LangChainOpenAIAdapter,
+        "anthropic": LangChainAnthropicAdapter,
+    }
+
     def __init__(
         self,
         *,
@@ -59,12 +64,18 @@ class ModelGateway:
         config_store = load_gateway_config(config_path)
         adapters: dict[str, BaseProviderAdapter] = {}
 
-        # Register default adapters by provider name.
-        for provider_name in config_store.providers:
-            if provider_name == "openai":
-                adapters[provider_name] = LangChainOpenAIAdapter()
-            elif provider_name == "anthropic":
-                adapters[provider_name] = LangChainAnthropicAdapter()
+        # Register adapters by explicit provider.adapter or legacy provider name fallback.
+        for provider_name, provider_cfg in config_store.providers.items():
+            adapter_name = resolve_provider_adapter(provider_name, provider_cfg)
+            if adapter_name is None:
+                raise err_provider_config(f"provider '{provider_name}' adapter is not configured")
+
+            adapter_cls = cls.ADAPTER_REGISTRY.get(adapter_name)
+            if adapter_cls is None:
+                raise err_provider_config(
+                    f"provider '{provider_name}' adapter '{adapter_name}' is not supported"
+                )
+            adapters[provider_name] = adapter_cls()
 
         return cls(
             config_store=config_store,

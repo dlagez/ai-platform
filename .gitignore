@@ -61,3 +61,6 @@ override.tf.json
 
 # Local archive (non-project)
 archive/
+
+# Local index data
+index/

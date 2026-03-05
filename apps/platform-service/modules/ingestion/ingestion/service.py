@@ -8,6 +8,9 @@ import os
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
+
+import yaml
 
 from .embedding_client import EmbeddingClient, ModelGatewayEmbeddingClient
 from .errors import (
@@ -34,7 +37,13 @@ from .schemas import (
     VectorPoint,
 )
 from .store import InMemoryJobStore
-from .vector_store import BaseVectorStore, InMemoryVectorStore, QdrantVectorStore, build_collection_name
+from .vector_store import (
+    BaseVectorStore,
+    InMemoryVectorStore,
+    LocalQdrantVectorStore,
+    QdrantVectorStore,
+    build_collection_name,
+)
 
 
 LOGGER = logging.getLogger("ingestion_service")
@@ -48,6 +57,10 @@ class JobArtifacts:
 
 
 class IngestionService:
+    PROJECT_ROOT = Path(__file__).resolve().parents[5]
+    DEFAULT_INGESTION_CONFIG = PROJECT_ROOT / "configs" / "env" / "ingestion.yaml"
+    DEFAULT_LOCAL_QDRANT_PATH = PROJECT_ROOT / "index" / "qdrant_local"
+
     def __init__(
         self,
         *,
@@ -386,11 +399,52 @@ class IngestionService:
 
     @staticmethod
     def _default_vector_store() -> BaseVectorStore:
-        qdrant_url = os.getenv("QDRANT_URL")
+        qdrant_url, api_key, qdrant_path = IngestionService._resolve_vector_store_settings()
         if qdrant_url:
-            api_key = os.getenv("QDRANT_API_KEY")
             return QdrantVectorStore(base_url=qdrant_url, api_key=api_key)
+        if qdrant_path:
+            return LocalQdrantVectorStore(path=qdrant_path)
         return InMemoryVectorStore()
+
+    @classmethod
+    def _resolve_vector_store_settings(cls) -> tuple[str | None, str | None, str | None]:
+        config = cls._load_ingestion_config()
+        vector_store = config.get("vector_store", {}) if isinstance(config, dict) else {}
+
+        qdrant_url = (os.getenv("QDRANT_URL") or vector_store.get("qdrant_url") or "").strip() or None
+        qdrant_api_key = (os.getenv("QDRANT_API_KEY") or vector_store.get("qdrant_api_key") or "").strip() or None
+
+        qdrant_path_env = os.getenv("QDRANT_PATH")
+        if qdrant_path_env and qdrant_path_env.strip():
+            qdrant_path_raw = qdrant_path_env.strip()
+        else:
+            qdrant_path_raw = str(vector_store.get("qdrant_path") or "").strip()
+        if not qdrant_path_raw:
+            qdrant_path_raw = str(cls.DEFAULT_LOCAL_QDRANT_PATH)
+
+        qdrant_path = Path(qdrant_path_raw)
+        if not qdrant_path.is_absolute():
+            qdrant_path = cls.PROJECT_ROOT / qdrant_path
+
+        return qdrant_url, qdrant_api_key, str(qdrant_path)
+
+    @classmethod
+    def _load_ingestion_config(cls) -> dict:
+        config_path_raw = (os.getenv("INGESTION_CONFIG") or str(cls.DEFAULT_INGESTION_CONFIG)).strip()
+        config_path = Path(config_path_raw)
+        if not config_path.is_absolute():
+            config_path = cls.PROJECT_ROOT / config_path
+
+        if not config_path.exists():
+            return {}
+
+        try:
+            loaded = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            if isinstance(loaded, dict):
+                return loaded
+        except Exception as exc:
+            LOGGER.warning("load ingestion config failed path=%s err=%s", config_path, exc)
+        return {}
 
     @staticmethod
     def _resolve_retry_stage(*, job: IngestionJobRecord, from_stage: str) -> StageName:

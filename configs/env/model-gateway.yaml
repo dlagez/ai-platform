@@ -1,12 +1,19 @@
 providers:
   openai:
+    adapter: openai_compatible
     # base_url: ${OPENAI_BASE_URL}
     base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1/responses"
     api_key: ${OPENAI_API_KEY}
     timeout_ms: 10000
   anthropic:
+    adapter: anthropic
     base_url: ${ANTHROPIC_BASE_URL}
     api_key: ${ANTHROPIC_API_KEY}
+    timeout_ms: 10000
+  local_emb:
+    adapter: openai_compatible
+    base_url: "http://10.0.22.109:8002/v1"
+    api_key: "dummy-local-key"
     timeout_ms: 10000
 
 models:
@@ -18,6 +25,13 @@ models:
     max_context_tokens: 128000
     input_price_per_1k: 0.00015
     output_price_per_1k: 0.0006
+  - id: bge-m3
+    provider: local_emb
+    task: embedding
+    enabled: true
+    priority: 10
+    input_price_per_1k: 0.0
+    output_price_per_1k: 0.0
 
 routes:
   rag_qa:
@@ -34,4 +48,5 @@ routes:
     embedding: []
   ingestion:
     generation: []
-    embedding: []
+    embedding:
+      - bge-m3
